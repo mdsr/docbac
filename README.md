@@ -306,14 +306,32 @@ docbac/
    - Rebuild the container: `docker compose build --no-cache`
    - The Dockerfile now auto-detects architecture (amd64, arm64, arm)
 
-2. **rclone configuration not found**
+2. **"Read-only file system" errors during cleanup**
+   - These are warnings and don't affect backup functionality
+   - Caused by Docker volume mount restrictions
+   - The backup will still complete successfully
+
+3. **"Directory not found" errors during cleanup**
+   - Occurs when no previous backups exist for that type
+   - This is normal for first-time runs
+   - Subsequent runs won't show this error
+
+4. **Wrong compose stacks directory path**
+   - Update `COMPOSE_STACKS_DIR` in `.env` to the correct path
+   - Use absolute paths (e.g., `/home/user/docker-projects`)
+   - Leave empty or comment out if you don't have compose stacks to backup
+
+5. **rclone configuration not found**
    - Run the rclone config command as shown in setup
    - Ensure the config file is created in `./rclone-config/`
 
    - Run the rclone config command as shown in setup
    - Ensure the config file is created in `./rclone-config/`
 
-3. **Cannot connect to Google Drive**
+   - Run the rclone config command as shown in setup
+   - Ensure the config file is created in `./rclone-config/`
+
+6. **Cannot connect to Google Drive**
    - Check your internet connection
    - Verify rclone configuration with `docker compose exec backup-service rclone lsd gdrive:`
    - Re-run rclone config if needed
@@ -322,7 +340,11 @@ docbac/
    - Verify rclone configuration with `docker compose exec docbac-service rclone lsd gdrive:`
    - Re-run rclone config if needed
 
-4. **Permission denied accessing Docker volumes**
+   - Check your internet connection
+   - Verify rclone configuration with `docker compose exec docbac-service rclone lsd gdrive:`
+   - Re-run rclone config if needed
+
+7. **Permission denied accessing Docker volumes**
    - Ensure the container has access to `/var/run/docker.sock`
    - Check that `/var/lib/docker/volumes` is properly mounted
 

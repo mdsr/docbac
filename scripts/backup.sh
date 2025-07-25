@@ -108,7 +108,12 @@ backup_compose_stacks() {
     
     # Copy compose stacks directory
     log "Copying compose stacks from: $COMPOSE_STACKS_DIR"
-    cp -a "$COMPOSE_STACKS_DIR/." "$COMPOSE_BACKUP_DIR/"
+    if cp -a "$COMPOSE_STACKS_DIR/." "$COMPOSE_BACKUP_DIR/" 2>/dev/null; then
+        log "Successfully copied compose stacks"
+    else
+        log "ERROR: Failed to copy compose stacks directory"
+        return 1
+    fi
     
     # Create compressed backup
     create_backup "compose-stacks" "$COMPOSE_BACKUP_DIR"
@@ -121,17 +126,30 @@ cleanup_old_backups() {
     for backup_type in "volumes" "compose-stacks"; do
         log "Cleaning up old $backup_type backups..."
         
+        # Check if directory exists on Google Drive first
+        if ! rclone lsd "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/" >/dev/null 2>&1; then
+            log "Backup directory for $backup_type does not exist yet, skipping cleanup"
+            continue
+        fi
+        
         # List files, sort by modification time (newest first), skip the first MAX_BACKUPS, then delete the rest
-        rclone lsf "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/" --format "tsp" | \
+        local files_to_delete=$(rclone lsf "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/" --format "tsp" 2>/dev/null | \
         sort -k2 -nr | \
         tail -n +$((MAX_BACKUPS + 1)) | \
-        cut -d' ' -f3- | \
-        while IFS= read -r file; do
-            if [ -n "$file" ]; then
-                log "Deleting old backup: $file"
-                rclone delete "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/$file"
-            fi
-        done
+        cut -d' ' -f3-)
+        
+        if [ -n "$files_to_delete" ]; then
+            echo "$files_to_delete" | while IFS= read -r file; do
+                if [ -n "$file" ]; then
+                    log "Deleting old backup: $file"
+                    rclone delete "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/$file" 2>/dev/null || {
+                        log "WARNING: Failed to delete $file"
+                    }
+                fi
+            done
+        else
+            log "No old backups to clean up for $backup_type"
+        fi
     done
 }
 
@@ -153,8 +171,11 @@ main() {
     local start_time=$(date +%s)
     local success=true
     
-    # Create backup directories
+    # Create backup directories (ensure they're writable)
     mkdir -p "$VOLUMES_BACKUP_DIR" "$COMPOSE_BACKUP_DIR"
+    
+    # Make sure directories are writable
+    chmod 755 "$VOLUMES_BACKUP_DIR" "$COMPOSE_BACKUP_DIR" 2>/dev/null || true
     
     # Backup Docker volumes
     if ! backup_docker_volumes; then
@@ -177,8 +198,19 @@ main() {
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
     
-    # Clean up temporary directories
-    rm -rf "$VOLUMES_BACKUP_DIR" "$COMPOSE_BACKUP_DIR"
+    # Clean up temporary directories (with better error handling)
+    log "Cleaning up temporary directories..."
+    if [ -d "$VOLUMES_BACKUP_DIR" ]; then
+        rm -rf "$VOLUMES_BACKUP_DIR" 2>/dev/null || {
+            log "WARNING: Could not remove volumes backup directory (may be read-only)"
+        }
+    fi
+    
+    if [ -d "$COMPOSE_BACKUP_DIR" ]; then
+        rm -rf "$COMPOSE_BACKUP_DIR" 2>/dev/null || {
+            log "WARNING: Could not remove compose backup directory (may be read-only)"
+        }
+    fi
     
     if [ "$success" = true ]; then
         log "========================================"
