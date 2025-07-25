@@ -18,20 +18,18 @@ services:
       # Mount logs directory
       - ./logs:/logs
     environment:
-      # Backup configuration
-      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
-      - MAX_BACKUPS=${MAX_BACKUPS:-7}
-      - GDRIVE_REMOTE_NAME=${GDRIVE_REMOTE_NAME:-gdrive}
-      - GDRIVE_BACKUP_PATH=${GDRIVE_BACKUP_PATH:-/docker-backups}
-      - SERVER_NAME=${SERVER_NAME:-}
-      - COMPOSE_STACKS_DIR=${COMPOSE_STACKS_DIR:-/opt/docker-stacks}
-      - BACKUP_PREFIX=${BACKUP_PREFIX:-backup}
-      - TIMEZONE=${TIMEZONE:-UTC}
-      # Graceful backup settings
-      - GRACEFUL_BACKUP_LABEL=${GRACEFUL_BACKUP_LABEL:-backup.graceful}
-      - GRACEFUL_STOP_TIMEOUT=${GRACEFUL_STOP_TIMEOUT:-30}
-      - ENABLE_GRACEFUL_BACKUP=${ENABLE_GRACEFUL_BACKUP:-true}
-      # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SERVER_NAME=${SERVER_NAME}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE}
+      - MAX_BACKUPS=${MAX_BACKUPS}
+      - GDRIVE_REMOTE_NAME=${GDRIVE_REMOTE_NAME}
+      - GDRIVE_BACKUP_PATH=${GDRIVE_BACKUP_PATH}
+      - COMPOSE_STACKS_DIR=/compose-stacks
+      - BACKUP_PREFIX=${BACKUP_PREFIX}
+      - TIMEZONE=${TIMEZONE}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - GRACEFUL_BACKUP_LABEL=${GRACEFUL_BACKUP_LABEL}
+      - GRACEFUL_STOP_TIMEOUT=${GRACEFUL_STOP_TIMEOUT}
+      - ENABLE_GRACEFUL_BACKUP=${ENABLE_GRACEFUL_BACKUP}
+
     restart: unless-stopped
     command: /scripts/start.sh
