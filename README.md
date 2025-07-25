@@ -1,4 +1,4 @@
-# Docker Backup Solution
+# Docbac - Docker Backup Solution
 
 A comprehensive Docker Compose solution for automatically backing up Docker volumes and compose stack directories to Google Drive using rclone.
 
@@ -19,9 +19,9 @@ A comprehensive Docker Compose solution for automatically backing up Docker volu
 ### 1. Setup Directory Structure
 
 ```bash
-mkdir docker-backup-solution
-cd docker-backup-solution
-mkdir -p scripts logs rclone-config
+mkdir docbac
+cd docbac
+mkdir -p scripts logs rclone-config examples
 ```
 
 ### 2. Create Configuration Files
@@ -44,7 +44,7 @@ docker compose build
 
 Configure rclone interactively:
 ```bash
-docker compose run --rm backup-service rclone config
+docker compose run --rm docbac-service rclone config
 ```
 
 Follow these steps:
@@ -133,49 +133,54 @@ docker compose up -d
 
 ### Monitor Logs
 ```bash
-docker compose logs -f backup-service
+docker compose logs -f docbac-service
 ```
 
 ### Manual Backup
 ```bash
-docker compose exec backup-service /scripts/manual-backup.sh
+docker compose exec docbac-service /scripts/manual-backup.sh
 ```
 
 ### List Available Backups
 ```bash
 # List volume backups
-docker compose exec backup-service /scripts/restore.sh volumes
+docker compose exec docbac-service /scripts/restore.sh volumes
 
 # List compose stack backups
-docker compose exec backup-service /scripts/restore.sh compose-stacks
+docker compose exec docbac-service /scripts/restore.sh compose-stacks
 ```
 
 ### Restore from Backup
 ```bash
 # Restore volumes
-docker compose exec backup-service /scripts/restore.sh volumes backup_volumes_20231225_120000.tar.gz
+docker compose exec docbac-service /scripts/restore.sh volumes backup_volumes_20231225_120000.tar.gz
 
 # Restore compose stacks
-docker compose exec backup-service /scripts/restore.sh compose-stacks backup_compose-stacks_20231225_120000.tar.gz
+docker compose exec docbac-service /scripts/restore.sh compose-stacks backup_compose-stacks_20231225_120000.tar.gz
 ```
 
 ### Test rclone Connection
 ```bash
-docker compose exec backup-service rclone lsd gdrive:
+docker compose exec docbac-service rclone lsd gdrive:
 ```
 
 ### List Containers with Graceful Backup
 ```bash
-docker compose exec backup-service /scripts/graceful-backup.sh list
+docker compose exec docbac-service /scripts/graceful-backup.sh list
 ```
 
 ### Test Graceful Backup Process
 ```bash
 # Stop graceful containers
-docker compose exec backup-service /scripts/graceful-backup.sh stop
+docker compose exec docbac-service /scripts/graceful-backup.sh stop
 
 # Start graceful containers
-docker compose exec backup-service /scripts/graceful-backup.sh start
+docker compose exec docbac-service /scripts/graceful-backup.sh start
+```
+
+### Check Architecture Compatibility
+```bash
+docker compose exec docbac-service /scripts/check-arch.sh
 ```
 
 ## Graceful Backup Configuration
@@ -270,7 +275,7 @@ The solution creates the following structure on Google Drive:
 ## Local Directory Structure
 
 ```
-docker-backup-solution/
+docbac/
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env
@@ -279,7 +284,10 @@ docker-backup-solution/
 │   ├── backup.sh
 │   ├── graceful-backup.sh
 │   ├── manual-backup.sh
-│   └── restore.sh
+│   ├── restore.sh
+│   └── check-arch.sh
+├── examples/
+│   └── docker-compose-with-graceful.yml
 ├── rclone-config/
 │   └── rclone.conf
 └── logs/
@@ -292,16 +300,29 @@ docker-backup-solution/
 
 ### Common Issues
 
-1. **rclone configuration not found**
+1. **"exec format error" when running rclone**
+   - This indicates architecture mismatch
+   - Run: `docker compose exec docbac-service /scripts/check-arch.sh`
+   - Rebuild the container: `docker compose build --no-cache`
+   - The Dockerfile now auto-detects architecture (amd64, arm64, arm)
+
+2. **rclone configuration not found**
    - Run the rclone config command as shown in setup
    - Ensure the config file is created in `./rclone-config/`
 
-2. **Cannot connect to Google Drive**
+   - Run the rclone config command as shown in setup
+   - Ensure the config file is created in `./rclone-config/`
+
+3. **Cannot connect to Google Drive**
    - Check your internet connection
    - Verify rclone configuration with `docker compose exec backup-service rclone lsd gdrive:`
    - Re-run rclone config if needed
 
-3. **Permission denied accessing Docker volumes**
+   - Check your internet connection
+   - Verify rclone configuration with `docker compose exec docbac-service rclone lsd gdrive:`
+   - Re-run rclone config if needed
+
+4. **Permission denied accessing Docker volumes**
    - Ensure the container has access to `/var/run/docker.sock`
    - Check that `/var/lib/docker/volumes` is properly mounted
 
@@ -319,7 +340,7 @@ LOG_LEVEL=DEBUG
 
 Check logs:
 ```bash
-docker compose logs backup-service
+docker compose logs docbac-service
 tail -f logs/backup.log
 ```
 
@@ -328,8 +349,8 @@ tail -f logs/backup.log
 Verify backup contents:
 ```bash
 # Download and inspect a backup
-docker compose exec backup-service rclone copy gdrive:/docker-backups/volumes/backup_volumes_20231225_120000.tar.gz /tmp/
-docker compose exec backup-service tar -tzf /tmp/backup_volumes_20231225_120000.tar.gz | head -20
+docker compose exec docbac-service rclone copy gdrive:/docker-backups/volumes/backup_volumes_20231225_120000.tar.gz /tmp/
+docker compose exec docbac-service tar -tzf /tmp/backup_volumes_20231225_120000.tar.gz | head -20
 ```
 
 ## Security Considerations
