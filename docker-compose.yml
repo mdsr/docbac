@@ -23,6 +23,7 @@ services:
       - MAX_BACKUPS=${MAX_BACKUPS:-7}
       - GDRIVE_REMOTE_NAME=${GDRIVE_REMOTE_NAME:-gdrive}
       - GDRIVE_BACKUP_PATH=${GDRIVE_BACKUP_PATH:-/docker-backups}
+      - SERVER_NAME=${SERVER_NAME:-}
       - COMPOSE_STACKS_DIR=${COMPOSE_STACKS_DIR:-/opt/docker-stacks}
       - BACKUP_PREFIX=${BACKUP_PREFIX:-backup}
       - TIMEZONE=${TIMEZONE:-UTC}

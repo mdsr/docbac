@@ -9,6 +9,16 @@ VOLUMES_BACKUP_DIR="$BACKUP_DIR/volumes"
 COMPOSE_BACKUP_DIR="$BACKUP_DIR/compose-stacks"
 LOG_FILE="/logs/backup.log"
 
+# Server identification - use SERVER_NAME if set, otherwise hostname
+if [ -n "$SERVER_NAME" ]; then
+    CURRENT_SERVER="$SERVER_NAME"
+else
+    CURRENT_SERVER=$(hostname)
+fi
+
+# Update Google Drive paths to include server name
+GDRIVE_SERVER_PATH="${GDRIVE_BACKUP_PATH}/${CURRENT_SERVER}"
+
 # Function to log messages
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a $LOG_FILE
@@ -18,7 +28,7 @@ log() {
 create_backup() {
     local backup_type=$1
     local source_dir=$2
-    local backup_name="${BACKUP_PREFIX}_${backup_type}_${BACKUP_DATE}.tar.gz"
+    local backup_name="${BACKUP_PREFIX}_${backup_type}_${CURRENT_SERVER}_${BACKUP_DATE}.tar.gz"
     local backup_path="/tmp/$backup_name"
     
     log "Creating $backup_type backup: $backup_name"
@@ -26,9 +36,9 @@ create_backup() {
     if [ -d "$source_dir" ] && [ "$(ls -A $source_dir 2>/dev/null)" ]; then
         tar -czf "$backup_path" -C "$source_dir" .
         
-        # Upload to Google Drive
-        log "Uploading $backup_name to Google Drive..."
-        if rclone copy "$backup_path" "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/"; then
+        # Upload to Google Drive (server-specific path)
+        log "Uploading $backup_name to Google Drive at ${GDRIVE_SERVER_PATH}/${backup_type}/"
+        if rclone copy "$backup_path" "${GDRIVE_REMOTE_NAME}:${GDRIVE_SERVER_PATH}/${backup_type}/"; then
             log "Successfully uploaded $backup_name"
             rm -f "$backup_path"
         else
@@ -43,7 +53,7 @@ create_backup() {
 
 # Function to discover and backup Docker volumes
 backup_docker_volumes() {
-    log "Starting Docker volumes backup..."
+    log "Starting Docker volumes backup for server: $CURRENT_SERVER"
     
     # Stop graceful containers before volume backup
     log "Preparing containers for graceful backup..."
@@ -55,29 +65,39 @@ backup_docker_volumes() {
     rm -rf "$VOLUMES_BACKUP_DIR"
     mkdir -p "$VOLUMES_BACKUP_DIR"
     
-    # Get list of all Docker volumes
-    volumes=$(docker volume ls -q)
+    # Get detailed volume information
+    log "Gathering volume information..."
+    local volumes_info=$(/scripts/get-volume-info.sh json)
+    local volume_count=$(echo "$volumes_info" | jq length)
     
-    if [ -z "$volumes" ]; then
+    if [ "$volume_count" -eq 0 ]; then
         log "No Docker volumes found"
         return 0
     fi
     
-    log "Found Docker volumes: $(echo $volumes | tr '\n' ' ')"
+    log "Found $volume_count Docker volumes"
     
-    # Backup each volume
-    for volume in $volumes; do
-        log "Backing up Docker volume: $volume"
-        volume_path="/var/lib/docker/volumes/$volume/_data"
-        backup_volume_path="$VOLUMES_BACKUP_DIR/$volume"
+    # Create volume manifest
+    echo "$volumes_info" > "$VOLUMES_BACKUP_DIR/volume_manifest.json"
+    
+    # Backup each volume with meaningful names
+    echo "$volumes_info" | jq -r '.[] | "\(.volume)|\(.meaningful_name)|\(.project // "")|\(.containers // "")"' | while IFS='|' read -r volume meaningful_name project containers; do
+        log "Backing up volume: $volume as $meaningful_name (Project: ${project:-none})"
+        
+        local volume_path="/var/lib/docker/volumes/$volume/_data"
+        local backup_volume_path="$VOLUMES_BACKUP_DIR/$meaningful_name"
         
         if [ -d "$volume_path" ]; then
             mkdir -p "$backup_volume_path"
-            cp -a "$volume_path/." "$backup_volume_path/" 2>/dev/null || {
+            if cp -a "$volume_path/." "$backup_volume_path/" 2>/dev/null; then
+                log "Successfully backed up volume: $volume as $meaningful_name"
+                
+                # Create volume metadata file
+                echo "$volumes_info" | jq --arg vol "$volume" '.[] | select(.volume == $vol)' > "$backup_volume_path/.volume_info.json"
+            else
                 log "WARNING: Could not backup volume $volume (may be in use)"
                 continue
-            }
-            log "Successfully backed up volume: $volume"
+            fi
         else
             log "WARNING: Volume path not found: $volume_path"
         fi
@@ -121,19 +141,19 @@ backup_compose_stacks() {
 
 # Function to cleanup old backups
 cleanup_old_backups() {
-    log "Cleaning up old backups (keeping last $MAX_BACKUPS)..."
+    log "Cleaning up old backups for server $CURRENT_SERVER (keeping last $MAX_BACKUPS)..."
     
     for backup_type in "volumes" "compose-stacks"; do
         log "Cleaning up old $backup_type backups..."
         
         # Check if directory exists on Google Drive first
-        if ! rclone lsd "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/" >/dev/null 2>&1; then
+        if ! rclone lsd "${GDRIVE_REMOTE_NAME}:${GDRIVE_SERVER_PATH}/${backup_type}/" >/dev/null 2>&1; then
             log "Backup directory for $backup_type does not exist yet, skipping cleanup"
             continue
         fi
         
         # List files, sort by modification time (newest first), skip the first MAX_BACKUPS, then delete the rest
-        local files_to_delete=$(rclone lsf "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/" --format "tsp" 2>/dev/null | \
+        local files_to_delete=$(rclone lsf "${GDRIVE_REMOTE_NAME}:${GDRIVE_SERVER_PATH}/${backup_type}/" --format "tsp" 2>/dev/null | \
         sort -k2 -nr | \
         tail -n +$((MAX_BACKUPS + 1)) | \
         cut -d' ' -f3-)
@@ -142,7 +162,7 @@ cleanup_old_backups() {
             echo "$files_to_delete" | while IFS= read -r file; do
                 if [ -n "$file" ]; then
                     log "Deleting old backup: $file"
-                    rclone delete "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${backup_type}/$file" 2>/dev/null || {
+                    rclone delete "${GDRIVE_REMOTE_NAME}:${GDRIVE_SERVER_PATH}/${backup_type}/$file" 2>/dev/null || {
                         log "WARNING: Failed to delete $file"
                     }
                 fi
@@ -165,7 +185,7 @@ send_notification() {
 # Main backup process
 main() {
     log "========================================"
-    log "Starting backup process..."
+    log "Starting backup process for server: $CURRENT_SERVER"
     log "========================================"
     
     local start_time=$(date +%s)

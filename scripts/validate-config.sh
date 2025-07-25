@@ -57,11 +57,13 @@ validate_rclone() {
     log "✓ Google Drive connection successful"
     
     # Ensure backup directory exists
+    local server_name=${SERVER_NAME:-$(hostname)}
     rclone mkdir "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}" 2>/dev/null || true
-    rclone mkdir "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/volumes" 2>/dev/null || true
-    rclone mkdir "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/compose-stacks" 2>/dev/null || true
+    rclone mkdir "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${server_name}" 2>/dev/null || true
+    rclone mkdir "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${server_name}/volumes" 2>/dev/null || true
+    rclone mkdir "${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${server_name}/compose-stacks" 2>/dev/null || true
     
-    log "✓ Google Drive backup directories created"
+    log "✓ Google Drive backup directories created for server: $server_name"
     return 0
 }
 
@@ -167,9 +169,11 @@ validate_environment() {
 
 # Function to show configuration summary
 show_configuration_summary() {
+    local server_name=${SERVER_NAME:-$(hostname)}
     log "=== Configuration Summary ==="
+    log "Server Name: $server_name"
     log "Google Drive Remote: $GDRIVE_REMOTE_NAME"
-    log "Backup Path: $GDRIVE_BACKUP_PATH"
+    log "Backup Path: $GDRIVE_BACKUP_PATH/$server_name"
     log "Compose Stacks Dir: $COMPOSE_STACKS_DIR"
     log "Max Backups: $MAX_BACKUPS"
     log "Backup Schedule: $BACKUP_SCHEDULE"

@@ -4,15 +4,18 @@ A comprehensive Docker Compose solution for automatically backing up Docker volu
 
 ## Features
 
+- **Multi-Server Support**: Organizes backups by server/hostname with configurable server names
+- **Intelligent Volume Naming**: Uses meaningful names based on Docker Compose project and service info
 - **Automatic Discovery**: Discovers and backs up all Docker volumes on the host
 - **Graceful Backup**: Supports stopping/starting containers during backup for data consistency
 - **Compose Stacks Backup**: Backs up directories containing docker-compose.yaml files and related configurations
 - **Scheduled Backups**: Configurable cron-based scheduling
-- **Retention Management**: Configurable number of backups to retain
+- **Retention Management**: Configurable number of backups to retain per server
 - **Google Drive Integration**: Uses rclone for reliable cloud storage
+- **Volume Metadata**: Includes volume manifests with project/service information for easier restoration
 - **Logging**: Comprehensive logging with configurable levels
 - **Manual Backup**: Support for on-demand backups
-- **Restore Functionality**: Scripts for restoring backups when needed
+- **Cross-Server Restore**: Scripts for restoring backups from any server
 
 ## Quick Start
 
@@ -111,9 +114,10 @@ docker compose up -d
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BACKUP_SCHEDULE` | `0 2 * * *` | Cron schedule for automatic backups |
-| `MAX_BACKUPS` | `7` | Number of backups to retain |
+| `MAX_BACKUPS` | `7` | Number of backups to retain per server |
 | `GDRIVE_REMOTE_NAME` | `gdrive` | Name of the rclone remote |
 | `GDRIVE_BACKUP_PATH` | `/docker-backups` | Path on Google Drive for backups |
+| `SERVER_NAME` | hostname | Server identifier for organizing backups |
 | `COMPOSE_STACKS_DIR` | `/opt/docker-stacks` | Local directory containing compose stacks |
 | `BACKUP_PREFIX` | `backup` | Prefix for backup filenames |
 | `TIMEZONE` | `UTC` | Timezone for scheduling and logs |
@@ -143,20 +147,41 @@ docker compose exec docbac-service /scripts/manual-backup.sh
 
 ### List Available Backups
 ```bash
-# List volume backups
+# List volume backups for current server
 docker compose exec docbac-service /scripts/restore.sh volumes
+
+# List volume backups for specific server
+docker compose exec docbac-service /scripts/restore.sh volumes "" server1
 
 # List compose stack backups
 docker compose exec docbac-service /scripts/restore.sh compose-stacks
+
+# List all available servers
+docker compose exec docbac-service /scripts/restore.sh servers
+```
+
+### View Volume Information
+```bash
+# List volumes with meaningful names
+docker compose exec docbac-service /scripts/get-volume-info.sh list
+
+# Get detailed volume information in JSON
+docker compose exec docbac-service /scripts/get-volume-info.sh json
+
+# Get info for specific volume
+docker compose exec docbac-service /scripts/get-volume-info.sh volume <volume_name>
 ```
 
 ### Restore from Backup
 ```bash
-# Restore volumes
-docker compose exec docbac-service /scripts/restore.sh volumes backup_volumes_20231225_120000.tar.gz
+# Restore volumes from current server
+docker compose exec docbac-service /scripts/restore.sh volumes backup_volumes_server1_20231225_120000.tar.gz
+
+# Restore volumes from specific server
+docker compose exec docbac-service /scripts/restore.sh volumes backup_volumes_server2_20231225_120000.tar.gz server2
 
 # Restore compose stacks
-docker compose exec docbac-service /scripts/restore.sh compose-stacks backup_compose-stacks_20231225_120000.tar.gz
+docker compose exec docbac-service /scripts/restore.sh compose-stacks backup_compose-stacks_server1_20231225_120000.tar.gz
 ```
 
 ### Test rclone Connection
@@ -183,7 +208,53 @@ docker compose exec docbac-service /scripts/graceful-backup.sh start
 docker compose exec docbac-service /scripts/check-arch.sh
 ```
 
-## Graceful Backup Configuration
+## Multi-Server Setup
+
+Docbac is designed to handle backups from multiple servers efficiently:
+
+### Server Organization
+
+Backups are organized on Google Drive by server:
+```
+/docker-backups/
+├── server1/
+│   ├── volumes/
+│   │   ├── backup_volumes_server1_20231225_120000.tar.gz
+│   │   └── backup_volumes_server1_20231224_120000.tar.gz
+│   └── compose-stacks/
+│       └── backup_compose-stacks_server1_20231225_120000.tar.gz
+├── server2/
+│   ├── volumes/
+│   │   └── backup_volumes_server2_20231225_120000.tar.gz
+│   └── compose-stacks/
+└── production-db/
+    └── volumes/
+        └── backup_volumes_production-db_20231225_120000.tar.gz
+```
+
+### Configuration for Multiple Servers
+
+On each server, configure the `SERVER_NAME` in `.env`:
+
+**Server 1 (.env):**
+```bash
+SERVER_NAME=webserver-01
+COMPOSE_STACKS_DIR=/opt/docker-apps
+```
+
+**Server 2 (.env):**
+```bash
+SERVER_NAME=database-server
+COMPOSE_STACKS_DIR=/home/admin/docker-stacks
+```
+
+**Production (.env):**
+```bash
+SERVER_NAME=production-cluster
+COMPOSE_STACKS_DIR=/srv/docker
+```
+
+If `SERVER_NAME` is not set, the system hostname is used automatically.
 
 The solution supports graceful backup for containers that require consistent data states. Configure containers using Docker labels:
 
@@ -262,15 +333,22 @@ The solution creates the following structure on Google Drive:
 
 ```
 /docker-backups/
-├── volumes/
-│   ├── backup_volumes_20231225_120000.tar.gz
-│   ├── backup_volumes_20231224_120000.tar.gz
-│   └── ...
-└── compose-stacks/
-    ├── backup_compose-stacks_20231225_120000.tar.gz
-    ├── backup_compose-stacks_20231224_120000.tar.gz
-    └── ...
+├── server1/
+│   ├── volumes/
+│   │   ├── backup_volumes_server1_20231225_120000.tar.gz
+│   │   └── backup_volumes_server1_20231224_120000.tar.gz
+│   └── compose-stacks/
+│       ├── backup_compose-stacks_server1_20231225_120000.tar.gz
+│       └── backup_compose-stacks_server1_20231224_120000.tar.gz
+└── server2/
+    ├── volumes/
+    └── compose-stacks/
 ```
+
+Each volume backup contains:
+- Organized directories with meaningful names (e.g., `myapp_database` instead of hash)
+- `volume_manifest.json` with metadata for intelligent restoration
+- Individual `.volume_info.json` files per volume with detailed metadata
 
 ## Local Directory Structure
 
@@ -283,8 +361,10 @@ docbac/
 │   ├── start.sh
 │   ├── backup.sh
 │   ├── graceful-backup.sh
+│   ├── get-volume-info.sh
 │   ├── manual-backup.sh
 │   ├── restore.sh
+│   ├── validate-config.sh
 │   └── check-arch.sh
 ├── examples/
 │   └── docker-compose-with-graceful.yml

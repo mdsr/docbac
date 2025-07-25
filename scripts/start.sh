@@ -29,7 +29,11 @@ fi
 log "Google Drive connection successful"
 
 # Ensure backup directory exists on Google Drive
+SERVER_NAME_FOR_PATH=${SERVER_NAME:-$(hostname)}
 rclone mkdir ${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH} 2>/dev/null || true
+rclone mkdir ${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${SERVER_NAME_FOR_PATH} 2>/dev/null || true
+rclone mkdir ${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${SERVER_NAME_FOR_PATH}/volumes 2>/dev/null || true
+rclone mkdir ${GDRIVE_REMOTE_NAME}:${GDRIVE_BACKUP_PATH}/${SERVER_NAME_FOR_PATH}/compose-stacks 2>/dev/null || true
 
 # Setup cron job
 log "Setting up backup schedule: $BACKUP_SCHEDULE"
