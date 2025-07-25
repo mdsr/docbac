@@ -1,0 +1,84 @@
+# Example docker-compose.yml showing how to configure containers for graceful backup
+
+version: '3.8'
+
+services:
+  # Database service that needs graceful backup (stop method)
+  postgres:
+    image: postgres:15
+    labels:
+      # Enable graceful backup
+      - "backup.graceful=true"
+      # Use stop method (default)
+      - "backup.graceful.method=stop"
+      # Custom timeout for stopping (optional)
+      - "backup.graceful.timeout=60"
+    environment:
+      POSTGRES_DB: myapp
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Application service with custom pre/post commands
+  webapp:
+    image: myapp:latest
+    labels:
+      # Enable graceful backup
+      - "backup.graceful=true"
+      # Use custom command method
+      - "backup.graceful.method=command"
+      # Execute before backup (flush caches, close connections)
+      - "backup.graceful.pre-command=curl -X POST http://localhost:8080/api/admin/flush-cache && sleep 5"
+      # Execute after backup (warm up caches)
+      - "backup.graceful.post-command=curl -X POST http://localhost:8080/api/admin/warmup"
+    volumes:
+      - app_data:/app/data
+      - app_logs:/app/logs
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # Redis service using pause method (faster than stop/start)
+  redis:
+    image: redis:7-alpine
+    labels:
+      # Enable graceful backup
+      - "backup.graceful=true"
+      # Use pause method (keeps container in memory)
+      - "backup.graceful.method=pause"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Service that doesn't need graceful backup (e.g., stateless frontend)
+  frontend:
+    image: nginx:alpine
+    # No graceful backup labels - will continue running during backup
+    volumes:
+      - ./static:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+  # Database with BGSAVE command before backup
+  mongodb:
+    image: mongo:6
+    labels:
+      - "backup.graceful=true"
+      - "backup.graceful.method=command"
+      # Force MongoDB to save data to disk before backup
+      - "backup.graceful.pre-command=mongosh --eval 'db.runCommand({fsync: 1, lock: false})'"
+      # Optional: Compact database after backup
+      - "backup.graceful.post-command=mongosh --eval 'db.runCommand({compact: \"collection_name\"})'"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  app_data:
+  app_logs:
+  redis_data:
+  mongodb_data:
